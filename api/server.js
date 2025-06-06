@@ -17,7 +17,7 @@ const cache = new NodeCache({ stdTTL: 24 * 60 * 60 });
 // --- Simplified Manifest ---
 const manifest = {
     id: 'community.imdb.episode.ratings.simple',
-    version: '1.0.0',
+    version: '1.1.0', // Version bump for the API logic fix
     name: 'IMDb Episode Ratings',
     description: 'A simple addon that automatically adds IMDb ratings to episodes.',
     resources: ['meta'],
@@ -30,26 +30,39 @@ const manifest = {
 const builder = new addonBuilder(manifest);
 
 builder.defineMetaHandler(async (args) => {
-    // No more checking for user config. We use the server's keys directly.
-    const { type, id } = args;
+    const { type, id } = args; // 'id' here is the IMDb ID (e.g., tt3581920)
 
     if (type !== 'series') { return { meta: null }; }
 
     const cachedMeta = cache.get(id);
-    if (cachedMeta) { return { meta: cachedMeta }; }
+    if (cachedMeta) { 
+        console.log(`Returning cached metadata for ${id}`);
+        return { meta: cachedMeta };
+    }
 
     try {
-        const seriesResponse = await axios.get(`${TMDB_BASE_URL}/tv/${id}?api_key=${TMDB_API_KEY}`);
+        // --- THE FIX: Step 1 - Find the TMDB ID using the IMDb ID ---
+        const findResponse = await axios.get(`${TMDB_BASE_URL}/find/${id}?api_key=${TMDB_API_KEY}&external_source=imdb_id`);
+        
+        if (!findResponse.data.tv_results || findResponse.data.tv_results.length === 0) {
+            throw new Error(`Could not find series on TMDB with IMDb ID: ${id}`);
+        }
+        
+        const tmdbId = findResponse.data.tv_results[0].id; // This is the internal TMDB ID
+
+        // --- Step 2 - Use the correct TMDB ID for all subsequent requests ---
+        const seriesResponse = await axios.get(`${TMDB_BASE_URL}/tv/${tmdbId}?api_key=${TMDB_API_KEY}`);
         const seriesData = seriesResponse.data;
 
         const seasonPromises = seriesData.seasons.map(s =>
-            axios.get(`${TMDB_BASE_URL}/tv/${id}/season/${s.season_number}?api_key=${TMDB_API_KEY}`)
+            axios.get(`${TMDB_BASE_URL}/tv/${tmdbId}/season/${s.season_number}?api_key=${TMDB_API_KEY}`)
         );
         const seasonResponses = await Promise.all(seasonPromises);
-        const allEpisodes = seasonResponses.flatMap(res => res.data.episodes);
+        const allEpisodes = seasonResponses.flatMap(res => res.data.episodes || []);
 
         const episodePromises = allEpisodes.map(episode =>
-            getEpisodeRating(id, episode.season_number, episode.episode_number)
+            // Pass both IDs to the helper function
+            getEpisodeRating(id, tmdbId, episode.season_number, episode.episode_number)
         );
         const episodesWithRatings = (await Promise.all(episodePromises)).filter(Boolean);
 
@@ -76,14 +89,17 @@ builder.defineMetaHandler(async (args) => {
     }
 });
 
-async function getEpisodeRating(seriesImdbId, seasonNumber, episodeNumber) {
+// Updated function to accept both IMDb and TMDB IDs
+async function getEpisodeRating(seriesImdbId, seriesTmdbId, seasonNumber, episodeNumber) {
     const episodeCacheKey = `${seriesImdbId}:${seasonNumber}:${episodeNumber}`;
     const cachedEpisode = cache.get(episodeCacheKey);
     if (cachedEpisode) return cachedEpisode;
 
     try {
         const [tmdbEpisodeResponse, omdbResponse] = await Promise.all([
-            axios.get(`${TMDB_BASE_URL}/tv/${seriesImdbId}/season/${seasonNumber}/episode/${episodeNumber}?api_key=${TMDB_API_KEY}`),
+            // Use the correct TMDB ID here
+            axios.get(`${TMDB_BASE_URL}/tv/${seriesTmdbId}/season/${seasonNumber}/episode/${episodeNumber}?api_key=${TMDB_API_KEY}`),
+            // OMDb still uses the IMDb ID, which is correct
             axios.get(`http://www.omdbapi.com/?i=${seriesImdbId}&Season=${seasonNumber}&Episode=${episodeNumber}&apikey=${OMDB_API_KEY}`)
         ]);
 
@@ -104,7 +120,11 @@ async function getEpisodeRating(seriesImdbId, seasonNumber, episodeNumber) {
         cache.set(episodeCacheKey, episodeObject, 12 * 60 * 60);
         return episodeObject;
 
-    } catch (error) { return null; }
+    } catch (error) { 
+        // Log the error for debugging but don't crash the whole process
+        console.warn(`Could not fetch details for S${seasonNumber}E${episodeNumber} of ${seriesImdbId}: ${error.message}`);
+        return null;
+    }
 }
 
 // --- VERCL ADAPTER (Simplified) ---
@@ -113,8 +133,6 @@ const addonInterface = builder.getInterface();
 const router = getRouter(addonInterface);
 
 module.exports = (req, res) => {
-    // No more /configure route needed.
-    // The manifest routing fix is no longer needed because the install link is simple.
     router(req, res, () => {
         res.statusCode = 404;
         res.end();
