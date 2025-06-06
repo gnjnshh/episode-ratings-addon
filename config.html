@@ -52,6 +52,23 @@
         .info a:hover {
             text-decoration: underline;
         }
+        button {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #fff;
+            background-color: #4CAF50; /* A nice green color for the install button */
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
     </style>
 </head>
 <body>
@@ -59,11 +76,10 @@
         <h1>Addon Configuration</h1>
         
         <p class="info">
-            This addon requires API keys from TMDB and OMDb to fetch episode ratings.
-            You can get them for free from the links below.
+            Enter your API keys below and click "Install Addon". This addon requires API keys from TMDB and OMDb to fetch episode ratings.
         </p>
 
-        <form id="config-form">
+        <form id="config-form" onsubmit="return false;">
             <label for="tmdbKey">TMDB API Key (v3)</label>
             <input type="password" id="tmdbKey" name="tmdbKey" required>
             <p class="info" style="margin-top: -10px;">Get yours from <a href="https://www.themoviedb.org/settings/api" target="_blank">themoviedb.org</a>.</p>
@@ -72,30 +88,40 @@
             <input type="password" id="omdbKey" name="omdbKey" required>
             <p class="info" style="margin-top: -10px;">Get yours from <a href="http://www.omdbapi.com/apikey.aspx" target="_blank">omdbapi.com</a>.</p>
         </form>
+
+        <button id="install-btn">Install Addon</button>
+
     </div>
 
     <script>
-        // This script communicates with the Stremio client
-        const StremioAPI = {
-            get 'config'() {
-                // This is a special getter that Stremio will read to get the current config
-                const form = document.getElementById('config-form');
-                const formData = new FormData(form);
-                const config = {};
-                for (const [key, value] of formData.entries()) {
-                    config[key] = value;
-                }
-                return Promise.resolve(config);
-            },
-            set 'config'(config) {
-                // Stremio calls this to pre-fill the form with saved data
-                if (config) {
-                    document.getElementById('tmdbKey').value = config.tmdbKey || '';
-                    document.getElementById('omdbKey').value = config.omdbKey || '';
-                }
-                return Promise.resolve();
+        const installButton = document.getElementById('install-btn');
+
+        installButton.addEventListener('click', () => {
+            const tmdbKey = document.getElementById('tmdbKey').value;
+            const omdbKey = document.getElementById('omdbKey').value;
+
+            if (!tmdbKey || !omdbKey) {
+                alert('Please enter both API keys before installing.');
+                return;
             }
-        };
+
+            // 1. Create the configuration object
+            const config = { tmdbKey, omdbKey };
+
+            // 2. Stringify and Base64 encode the configuration for the deeplink
+            const configString = JSON.stringify(config);
+            const encodedConfig = btoa(configString);
+
+            // 3. Get the addon's manifest URL from the current window's origin
+            const manifestUrl = `${window.location.origin}/manifest.json`;
+
+            // 4. Construct the final installation deeplink that Stremio understands
+            const installUrl = `stremio://installaddon/${manifestUrl}?config=${encodedConfig}`;
+            
+            // 5. Redirect to the deeplink. This tells the browser to open the Stremio app
+            // and pass it the installation command with your saved keys.
+            window.location.href = installUrl;
+        });
     </script>
 </body>
 </html>
