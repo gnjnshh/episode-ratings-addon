@@ -1,45 +1,36 @@
 const { addonBuilder } = require('stremio-addon-sdk');
 const axios = require('axios');
 const NodeCache = require('node-cache');
-const fs = require('fs');
-const path = require('path');
 
-let configHtml = null;
-try {
-    const filePath = path.join(process.cwd(), 'config.html');
-    configHtml = fs.readFileSync(filePath, 'utf-8');
-} catch (error) {
-    console.error("CRITICAL: Could not read config.html file.", error);
+// This addon will get API keys from Vercel's Environment Variables.
+const { TMDB_API_KEY, OMDB_API_KEY } = process.env;
+
+// Check if the keys are set on the server.
+if (!TMDB_API_KEY || !OMDB_API_KEY) {
+    // This message will appear in Vercel logs if the keys are missing.
+    console.error("FATAL: API keys are not set in Vercel Environment Variables.");
 }
 
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const cache = new NodeCache({ stdTTL: 24 * 60 * 60 });
 
-// --- ADDON MANIFEST (No changes) ---
+// --- Simplified Manifest ---
 const manifest = {
-    id: 'community.imdb.episode.ratings.configurable',
-    version: '3.1.0', // Final routing fix version
-    name: 'IMDb Episode Ratings (Configurable)',
-    description: 'Adds IMDb ratings to individual episodes. Requires user API keys.',
+    id: 'community.imdb.episode.ratings.simple',
+    version: '1.0.0',
+    name: 'IMDb Episode Ratings',
+    description: 'A simple addon that automatically adds IMDb ratings to episodes.',
     resources: ['meta'],
     types: ['series'],
     idPrefixes: ['tt'],
-    catalogs: [],
-    behaviorHints: {
-        configurable: true,
-        configurationRequired: false 
-    }
+    catalogs: []
 };
 
-// --- CORE LOGIC (No Changes) ---
+// --- CORE LOGIC ---
 const builder = new addonBuilder(manifest);
 
 builder.defineMetaHandler(async (args) => {
-    if (!args.config || !args.config.tmdbKey || !args.config.omdbKey) {
-        return Promise.reject("Configuration required. Please provide TMDB and OMDb API keys in the addon settings.");
-    }
-
-    const { tmdbKey, omdbKey } = args.config;
+    // No more checking for user config. We use the server's keys directly.
     const { type, id } = args;
 
     if (type !== 'series') { return { meta: null }; }
@@ -48,17 +39,17 @@ builder.defineMetaHandler(async (args) => {
     if (cachedMeta) { return { meta: cachedMeta }; }
 
     try {
-        const seriesResponse = await axios.get(`${TMDB_BASE_URL}/tv/${id}?api_key=${tmdbKey}`);
+        const seriesResponse = await axios.get(`${TMDB_BASE_URL}/tv/${id}?api_key=${TMDB_API_KEY}`);
         const seriesData = seriesResponse.data;
 
         const seasonPromises = seriesData.seasons.map(s =>
-            axios.get(`${TMDB_BASE_URL}/tv/${id}/season/${s.season_number}?api_key=${tmdbKey}`)
+            axios.get(`${TMDB_BASE_URL}/tv/${id}/season/${s.season_number}?api_key=${TMDB_API_KEY}`)
         );
         const seasonResponses = await Promise.all(seasonPromises);
         const allEpisodes = seasonResponses.flatMap(res => res.data.episodes);
 
         const episodePromises = allEpisodes.map(episode =>
-            getEpisodeRating(id, episode.season_number, episode.episode_number, tmdbKey, omdbKey)
+            getEpisodeRating(id, episode.season_number, episode.episode_number)
         );
         const episodesWithRatings = (await Promise.all(episodePromises)).filter(Boolean);
 
@@ -81,19 +72,19 @@ builder.defineMetaHandler(async (args) => {
 
     } catch (error) {
         console.error(`Error fetching metadata for ${id}:`, error.message);
-        return Promise.reject(`Failed to fetch metadata for ${id}. Please check your API keys and try again.`);
+        return Promise.reject(`Failed to fetch metadata for ${id}.`);
     }
 });
 
-async function getEpisodeRating(seriesImdbId, seasonNumber, episodeNumber, tmdbKey, omdbKey) {
+async function getEpisodeRating(seriesImdbId, seasonNumber, episodeNumber) {
     const episodeCacheKey = `${seriesImdbId}:${seasonNumber}:${episodeNumber}`;
     const cachedEpisode = cache.get(episodeCacheKey);
     if (cachedEpisode) return cachedEpisode;
 
     try {
         const [tmdbEpisodeResponse, omdbResponse] = await Promise.all([
-            axios.get(`${TMDB_BASE_URL}/tv/${seriesImdbId}/season/${seasonNumber}/episode/${episodeNumber}?api_key=${tmdbKey}`),
-            axios.get(`http://www.omdbapi.com/?i=${seriesImdbId}&Season=${seasonNumber}&Episode=${episodeNumber}&apikey=${omdbKey}`)
+            axios.get(`${TMDB_BASE_URL}/tv/${seriesImdbId}/season/${seasonNumber}/episode/${episodeNumber}?api_key=${TMDB_API_KEY}`),
+            axios.get(`http://www.omdbapi.com/?i=${seriesImdbId}&Season=${seasonNumber}&Episode=${episodeNumber}&apikey=${OMDB_API_KEY}`)
         ]);
 
         const tmdbEpisode = tmdbEpisodeResponse.data;
@@ -116,32 +107,14 @@ async function getEpisodeRating(seriesImdbId, seasonNumber, episodeNumber, tmdbK
     } catch (error) { return null; }
 }
 
-// --- VERCL ADAPTER (with Routing Fix) ---
+// --- VERCL ADAPTER (Simplified) ---
 const { getRouter } = require("stremio-addon-sdk");
 const addonInterface = builder.getInterface();
 const router = getRouter(addonInterface);
 
 module.exports = (req, res) => {
-    // Handle /configure route
-    if (req.url.startsWith('/configure')) {
-        if (configHtml) {
-            res.setHeader('Content-Type', 'text/html');
-            res.end(configHtml);
-        } else {
-            res.statusCode = 500;
-            res.end('<h1>500 Internal Server Error</h1><p>The configuration file could not be loaded.</p>');
-        }
-        return;
-    }
-
-    // THE FIX:
-    // If the request is for the manifest (even with query params),
-    // we manually set the URL for the router to be clean.
-    if (req.url.startsWith('/manifest.json')) {
-        req.url = '/manifest.json';
-    }
-    
-    // Let the router handle the (potentially modified) request
+    // No more /configure route needed.
+    // The manifest routing fix is no longer needed because the install link is simple.
     router(req, res, () => {
         res.statusCode = 404;
         res.end();
