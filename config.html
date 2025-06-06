@@ -29,7 +29,7 @@
             margin-bottom: 8px;
             font-weight: bold;
         }
-        input[type="text"], input[type="password"] {
+        input[type="text"], input[type="password"], input[type="url"] {
             width: 100%;
             padding: 10px;
             margin-bottom: 20px;
@@ -53,21 +53,39 @@
             text-decoration: underline;
         }
         button {
-            display: block;
-            width: 100%;
-            padding: 12px;
-            font-size: 1.1em;
+            display: inline-block; /* Changed */
+            width: auto; /* Changed */
+            padding: 10px 15px; /* Adjusted */
+            font-size: 1em; /* Adjusted */
             font-weight: bold;
             color: #fff;
-            background-color: #4CAF50; /* A nice green color for the install button */
+            background-color: #4CAF50;
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            margin-top: 20px;
+            margin-top: 10px;
             transition: background-color 0.2s;
         }
         button:hover {
             background-color: #45a049;
+        }
+        #install-steps {
+            display: none; /* Hidden by default */
+            margin-top: 20px;
+            background-color: #333;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #444;
+        }
+        #install-steps p { margin-top: 0; }
+        .flex-container {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .flex-container input {
+            flex-grow: 1;
+            margin-bottom: 0;
         }
     </style>
 </head>
@@ -76,7 +94,7 @@
         <h1>Addon Configuration</h1>
         
         <p class="info">
-            Enter your API keys below and click "Install Addon". This addon requires API keys from TMDB and OMDb to fetch episode ratings.
+            Enter your API keys below to generate your personal installation link.
         </p>
 
         <form id="config-form" onsubmit="return false;">
@@ -89,40 +107,53 @@
             <p class="info" style="margin-top: -10px;">Get yours from <a href="http://www.omdbapi.com/apikey.aspx" target="_blank">omdbapi.com</a>.</p>
         </form>
 
-        <button id="install-btn">Install Addon</button>
+        <button id="generate-btn">Generate Install Link</button>
+
+        <div id="install-steps">
+            <p><b>Installation Link Generated!</b></p>
+            <p class="info" style="font-size: 0.8em;">Copy this link and paste it into the Stremio search bar to complete installation.</p>
+            <div class="flex-container">
+                <input type="url" id="install-link" readonly>
+                <button id="copy-btn">Copy</button>
+            </div>
+        </div>
 
     </div>
 
     <script>
-        const installButton = document.getElementById('install-btn');
-
-        installButton.addEventListener('click', () => {
+        document.getElementById('generate-btn').addEventListener('click', () => {
             const tmdbKey = document.getElementById('tmdbKey').value;
             const omdbKey = document.getElementById('omdbKey').value;
 
             if (!tmdbKey || !omdbKey) {
-                alert('Please enter both API keys before installing.');
+                alert('Please enter both API keys.');
                 return;
             }
 
-            // 1. Create the configuration object
             const config = { tmdbKey, omdbKey };
-
-            // 2. Stringify and Base64 encode the configuration for the deeplink
             const configString = JSON.stringify(config);
             const encodedConfig = btoa(configString);
-
-            // 3. Get the addon's manifest URL from the current window's origin
             const manifestUrl = `${window.location.origin}/manifest.json`;
-
-            // 4. URL-encode the manifest URL to be safely used as a parameter
             const encodedManifestUrl = encodeURIComponent(manifestUrl);
-
-            // 5. Construct the final, more robust installation deeplink
             const installUrl = `stremio://install?url=${encodedManifestUrl}&config=${encodedConfig}`;
             
-            // 6. Redirect to the deeplink to finalize installation in the Stremio app
-            window.location.href = installUrl;
+            // Show the installation steps section and populate the input field
+            const installSteps = document.getElementById('install-steps');
+            const installLinkInput = document.getElementById('install-link');
+            installLinkInput.value = installUrl;
+            installSteps.style.display = 'block';
+        });
+
+        document.getElementById('copy-btn').addEventListener('click', () => {
+            const installLinkInput = document.getElementById('install-link');
+            installLinkInput.select();
+            // document.execCommand('copy') is used for compatibility.
+            try {
+                document.execCommand('copy');
+                alert('Installation link copied to clipboard!');
+            } catch (err) {
+                alert('Failed to copy the link. Please copy it manually.');
+            }
         });
     </script>
 </body>
