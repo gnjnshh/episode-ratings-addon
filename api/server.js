@@ -17,7 +17,7 @@ const cache = new NodeCache({ stdTTL: 24 * 60 * 60 });
 // --- Simplified Manifest ---
 const manifest = {
     id: 'community.imdb.episode.ratings.simple',
-    version: '1.1.0', // Version bump for the API logic fix
+    version: '1.2.0', // Version bump for debugging
     name: 'IMDb Episode Ratings',
     description: 'A simple addon that automatically adds IMDb ratings to episodes.',
     resources: ['meta'],
@@ -30,6 +30,12 @@ const manifest = {
 const builder = new addonBuilder(manifest);
 
 builder.defineMetaHandler(async (args) => {
+    // --- NEW: Debugging Logs ---
+    // This will help us see if the environment variables are being loaded correctly.
+    console.log(`Attempting to use TMDB Key starting with: ${String(TMDB_API_KEY).substring(0, 4)}...`);
+    console.log(`Attempting to use OMDb Key starting with: ${String(OMDB_API_KEY).substring(0, 4)}...`);
+    // --- End of Debugging Logs ---
+
     const { type, id } = args; // 'id' here is the IMDb ID (e.g., tt3581920)
 
     if (type !== 'series') { return { meta: null }; }
@@ -41,7 +47,7 @@ builder.defineMetaHandler(async (args) => {
     }
 
     try {
-        // --- THE FIX: Step 1 - Find the TMDB ID using the IMDb ID ---
+        // Step 1 - Find the TMDB ID using the IMDb ID
         const findResponse = await axios.get(`${TMDB_BASE_URL}/find/${id}?api_key=${TMDB_API_KEY}&external_source=imdb_id`);
         
         if (!findResponse.data.tv_results || findResponse.data.tv_results.length === 0) {
@@ -50,7 +56,7 @@ builder.defineMetaHandler(async (args) => {
         
         const tmdbId = findResponse.data.tv_results[0].id; // This is the internal TMDB ID
 
-        // --- Step 2 - Use the correct TMDB ID for all subsequent requests ---
+        // Step 2 - Use the correct TMDB ID for all subsequent requests
         const seriesResponse = await axios.get(`${TMDB_BASE_URL}/tv/${tmdbId}?api_key=${TMDB_API_KEY}`);
         const seriesData = seriesResponse.data;
 
@@ -61,7 +67,6 @@ builder.defineMetaHandler(async (args) => {
         const allEpisodes = seasonResponses.flatMap(res => res.data.episodes || []);
 
         const episodePromises = allEpisodes.map(episode =>
-            // Pass both IDs to the helper function
             getEpisodeRating(id, tmdbId, episode.season_number, episode.episode_number)
         );
         const episodesWithRatings = (await Promise.all(episodePromises)).filter(Boolean);
@@ -89,7 +94,6 @@ builder.defineMetaHandler(async (args) => {
     }
 });
 
-// Updated function to accept both IMDb and TMDB IDs
 async function getEpisodeRating(seriesImdbId, seriesTmdbId, seasonNumber, episodeNumber) {
     const episodeCacheKey = `${seriesImdbId}:${seasonNumber}:${episodeNumber}`;
     const cachedEpisode = cache.get(episodeCacheKey);
@@ -97,9 +101,7 @@ async function getEpisodeRating(seriesImdbId, seriesTmdbId, seasonNumber, episod
 
     try {
         const [tmdbEpisodeResponse, omdbResponse] = await Promise.all([
-            // Use the correct TMDB ID here
             axios.get(`${TMDB_BASE_URL}/tv/${seriesTmdbId}/season/${seasonNumber}/episode/${episodeNumber}?api_key=${TMDB_API_KEY}`),
-            // OMDb still uses the IMDb ID, which is correct
             axios.get(`http://www.omdbapi.com/?i=${seriesImdbId}&Season=${seasonNumber}&Episode=${episodeNumber}&apikey=${OMDB_API_KEY}`)
         ]);
 
@@ -121,7 +123,6 @@ async function getEpisodeRating(seriesImdbId, seriesTmdbId, seasonNumber, episod
         return episodeObject;
 
     } catch (error) { 
-        // Log the error for debugging but don't crash the whole process
         console.warn(`Could not fetch details for S${seasonNumber}E${episodeNumber} of ${seriesImdbId}: ${error.message}`);
         return null;
     }
