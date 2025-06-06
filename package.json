@@ -1,0 +1,16 @@
+{
+  "name": "stremio-imdb-episode-ratings-addon",
+  "version": "2.0.0",
+  "description": "A configurable Stremio addon to display IMDb ratings for individual episodes.",
+  "main": "api/server.js",
+  "scripts": {
+    "start": "node api/server.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.7.2",
+    "node-cache": "^5.1.2",
+    "stremio-addon-sdk": "^1.6.10"
+  }
+}
