@@ -115,11 +115,13 @@
             // 3. Get the addon's manifest URL from the current window's origin
             const manifestUrl = `${window.location.origin}/manifest.json`;
 
-            // 4. Construct the final installation deeplink that Stremio understands
-            const installUrl = `stremio://installaddon/${manifestUrl}?config=${encodedConfig}`;
+            // 4. URL-encode the manifest URL to be safely used as a parameter
+            const encodedManifestUrl = encodeURIComponent(manifestUrl);
+
+            // 5. Construct the final, more robust installation deeplink
+            const installUrl = `stremio://install?url=${encodedManifestUrl}&config=${encodedConfig}`;
             
-            // 5. Redirect to the deeplink. This tells the browser to open the Stremio app
-            // and pass it the installation command with your saved keys.
+            // 6. Redirect to the deeplink to finalize installation in the Stremio app
             window.location.href = installUrl;
         });
     </script>
