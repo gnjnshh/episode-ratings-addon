@@ -21,13 +21,13 @@ const manifest = {
     version: '2.2.0', // Version bump for the fix
     name: 'IMDb Episode Ratings (Configurable)',
     description: 'Adds IMDb ratings to individual episodes. Requires user API keys.',
-    resources: ['meta', 'manifest'],
+    
+    // THE FIX: Remove "manifest" from this array
+    resources: ['meta'],
+
     types: ['series'],
     idPrefixes: ['tt'],
-    
-    // THE FIX: Add the required 'catalogs' property as an empty array
     catalogs: [],
-
     behaviorHints: {
         configurable: true,
         configurationRequired: true 
