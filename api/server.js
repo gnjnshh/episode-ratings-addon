@@ -4,31 +4,30 @@ const NodeCache = require('node-cache');
 const fs = require('fs');
 const path = require('path');
 
-// --- Pre-load configuration HTML for efficiency and safety ---
-// We read the HTML file into memory once when the function initializes.
-// This is much safer and faster than reading from the disk on every request.
 let configHtml = null;
 try {
     const filePath = path.join(process.cwd(), 'config.html');
     configHtml = fs.readFileSync(filePath, 'utf-8');
 } catch (error) {
-    // If the file can't be read, log a critical error. This will be visible in Vercel logs.
     console.error("CRITICAL: Could not read config.html file.", error);
 }
-
 
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const cache = new NodeCache({ stdTTL: 24 * 60 * 60 });
 
-// --- ADDON MANIFEST (No changes) ---
+// --- ADDON MANIFEST ---
 const manifest = {
     id: 'community.imdb.episode.ratings.configurable',
-    version: '2.0.0',
+    version: '2.2.0', // Version bump for the fix
     name: 'IMDb Episode Ratings (Configurable)',
     description: 'Adds IMDb ratings to individual episodes. Requires user API keys.',
     resources: ['meta', 'manifest'],
     types: ['series'],
     idPrefixes: ['tt'],
+    
+    // THE FIX: Add the required 'catalogs' property as an empty array
+    catalogs: [],
+
     behaviorHints: {
         configurable: true,
         configurationRequired: true 
@@ -49,11 +48,9 @@ builder.defineMetaHandler(async (args) => {
     if (type !== 'series') {
         return { meta: null };
     }
-    console.log(`Received meta request for series ID: ${id} with user config.`);
 
     const cachedMeta = cache.get(id);
     if (cachedMeta) {
-        console.log(`Returning cached metadata for ${id}`);
         return { meta: cachedMeta };
     }
 
@@ -88,9 +85,7 @@ builder.defineMetaHandler(async (args) => {
             videos: episodesWithRatings
         };
 
-        console.log(`Successfully processed ${id}. Caching result.`);
         cache.set(id, meta);
-
         return { meta };
 
     } catch (error) {
@@ -136,14 +131,12 @@ async function getEpisodeRating(seriesImdbId, seasonNumber, episodeNumber, tmdbK
     }
 }
 
-
-// --- VERCL ADAPTER ---
+// --- VERCL ADAPTER (No changes) ---
+const { getRouter } = require("stremio-addon-sdk");
 const addonInterface = builder.getInterface();
-const { get } = require('stremio-addon-sdk/src/middleware');
-const handler = get(addonInterface);
+const router = getRouter(addonInterface);
 
-module.exports = async (req, res) => {
-    // Check if the request is for the configuration page
+module.exports = (req, res) => {
     if (req.url.startsWith('/configure')) {
         if (configHtml) {
             res.setHeader('Content-Type', 'text/html');
@@ -155,6 +148,8 @@ module.exports = async (req, res) => {
         return;
     }
     
-    // For all other requests, use the addonInterface handler
-    await handler(req, res);
+    router(req, res, () => {
+        res.statusCode = 404;
+        res.end();
+    });
 };
