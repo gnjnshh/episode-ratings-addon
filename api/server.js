@@ -4,10 +4,23 @@ const NodeCache = require('node-cache');
 const fs = require('fs');
 const path = require('path');
 
-const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
-const cache = new NodeCache({ stdTTL: 24 * 60 * 60 }); // 24-hour cache
+// --- Pre-load configuration HTML for efficiency and safety ---
+// We read the HTML file into memory once when the function initializes.
+// This is much safer and faster than reading from the disk on every request.
+let configHtml = null;
+try {
+    const filePath = path.join(process.cwd(), 'config.html');
+    configHtml = fs.readFileSync(filePath, 'utf-8');
+} catch (error) {
+    // If the file can't be read, log a critical error. This will be visible in Vercel logs.
+    console.error("CRITICAL: Could not read config.html file.", error);
+}
 
-// --- ADDON MANIFEST ---
+
+const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+const cache = new NodeCache({ stdTTL: 24 * 60 * 60 });
+
+// --- ADDON MANIFEST (No changes) ---
 const manifest = {
     id: 'community.imdb.episode.ratings.configurable',
     version: '2.0.0',
@@ -16,22 +29,17 @@ const manifest = {
     resources: ['meta', 'manifest'],
     types: ['series'],
     idPrefixes: ['tt'],
-    // Add behaviorHints to tell Stremio this addon is configurable
     behaviorHints: {
         configurable: true,
-        // configurationRequired makes the "Configure" button more prominent
-        // if the addon hasn't been configured yet.
         configurationRequired: true 
     }
 };
 
-// --- CORE LOGIC ---
+// --- CORE LOGIC (No changes) ---
 const builder = new addonBuilder(manifest);
 
 builder.defineMetaHandler(async (args) => {
-    // Check if the user has provided API keys in the configuration.
     if (!args.config || !args.config.tmdbKey || !args.config.omdbKey) {
-        // If not, return an error message prompting them to configure the addon.
         return Promise.reject("Configuration required. Please provide TMDB and OMDb API keys in the addon settings.");
     }
 
@@ -131,19 +139,22 @@ async function getEpisodeRating(seriesImdbId, seasonNumber, episodeNumber, tmdbK
 
 // --- VERCL ADAPTER ---
 const addonInterface = builder.getInterface();
+const { get } = require('stremio-addon-sdk/src/middleware');
+const handler = get(addonInterface);
 
 module.exports = async (req, res) => {
     // Check if the request is for the configuration page
     if (req.url.startsWith('/configure')) {
-        res.setHeader('Content-Type', 'text/html');
-        // Construct the correct path to the config.html file.
-        // In Vercel, the file will be in the parent directory of the 'api' folder at runtime.
-        const filePath = path.join(process.cwd(), 'config.html');
-        fs.createReadStream(filePath).pipe(res);
+        if (configHtml) {
+            res.setHeader('Content-Type', 'text/html');
+            res.end(configHtml);
+        } else {
+            res.statusCode = 500;
+            res.end('<h1>500 Internal Server Error</h1><p>The configuration file could not be loaded.</p>');
+        }
         return;
     }
     
     // For all other requests, use the addonInterface handler
-    const { get } = require('stremio-addon-sdk/src/middleware');
-    await get(addonInterface)(req, res);
+    await handler(req, res);
 };
