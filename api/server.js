@@ -4,43 +4,34 @@ const NodeCache = require('node-cache');
 const fs = require('fs');
 const path = require('path');
 
-// Pre-load configuration HTML for efficiency and safety.
-// This reads the file into memory once when the function initializes.
 let configHtml = null;
 try {
     const filePath = path.join(process.cwd(), 'config.html');
     configHtml = fs.readFileSync(filePath, 'utf-8');
 } catch (error) {
-    // This will be visible in Vercel logs if the file is missing.
     console.error("CRITICAL: Could not read config.html file.", error);
 }
 
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
-const cache = new NodeCache({ stdTTL: 24 * 60 * 60 }); // 24-hour cache
+const cache = new NodeCache({ stdTTL: 24 * 60 * 60 });
 
-// --- ADDON MANIFEST (Fully Corrected) ---
+// --- ADDON MANIFEST (No changes) ---
 const manifest = {
     id: 'community.imdb.episode.ratings.configurable',
-    version: '2.3.0', // Final version bump
+    version: '3.1.0', // Final routing fix version
     name: 'IMDb Episode Ratings (Configurable)',
     description: 'Adds IMDb ratings to individual episodes. Requires user API keys.',
-    
-    // Corrected: Only 'meta' is needed. This addon does not provide its own manifest.
     resources: ['meta'],
-
     types: ['series'],
     idPrefixes: ['tt'],
-    
-    // Corrected: Added the required 'catalogs' property as an empty array.
     catalogs: [],
-
     behaviorHints: {
         configurable: true,
-        configurationRequired: true 
+        configurationRequired: false 
     }
 };
 
-// --- CORE LOGIC ---
+// --- CORE LOGIC (No Changes) ---
 const builder = new addonBuilder(manifest);
 
 builder.defineMetaHandler(async (args) => {
@@ -51,14 +42,10 @@ builder.defineMetaHandler(async (args) => {
     const { tmdbKey, omdbKey } = args.config;
     const { type, id } = args;
 
-    if (type !== 'series') {
-        return { meta: null };
-    }
+    if (type !== 'series') { return { meta: null }; }
 
     const cachedMeta = cache.get(id);
-    if (cachedMeta) {
-        return { meta: cachedMeta };
-    }
+    if (cachedMeta) { return { meta: cachedMeta }; }
 
     try {
         const seriesResponse = await axios.get(`${TMDB_BASE_URL}/tv/${id}?api_key=${tmdbKey}`);
@@ -81,9 +68,7 @@ builder.defineMetaHandler(async (args) => {
         });
 
         const meta = {
-            id: id,
-            type: 'series',
-            name: seriesData.name,
+            id: id, type: 'series', name: seriesData.name,
             poster: seriesData.poster_path ? `https://image.tmdb.org/t/p/w500${seriesData.poster_path}` : null,
             background: seriesData.backdrop_path ? `https://image.tmdb.org/t/p/original${seriesData.backdrop_path}` : null,
             description: seriesData.overview,
@@ -114,16 +99,12 @@ async function getEpisodeRating(seriesImdbId, seasonNumber, episodeNumber, tmdbK
         const tmdbEpisode = tmdbEpisodeResponse.data;
         const omdbEpisode = omdbResponse.data;
 
-        if (omdbEpisode.Response === "False") {
-            throw new Error(omdbEpisode.Error);
-        }
+        if (omdbEpisode.Response === "False") { throw new Error(omdbEpisode.Error); }
 
         const episodeObject = {
             id: `${seriesImdbId}:${seasonNumber}:${episodeNumber}`,
             title: tmdbEpisode.name || `Episode ${episodeNumber}`,
-            season: seasonNumber,
-            episode: episodeNumber,
-            overview: tmdbEpisode.overview,
+            season: seasonNumber, episode: episodeNumber, overview: tmdbEpisode.overview,
             thumbnail: tmdbEpisode.still_path ? `https://image.tmdb.org/t/p/w300${tmdbEpisode.still_path}` : null,
             released: new Date(tmdbEpisode.air_date),
             imdbRating: omdbEpisode.imdbRating && omdbEpisode.imdbRating !== 'N/A' ? omdbEpisode.imdbRating : null
@@ -132,17 +113,16 @@ async function getEpisodeRating(seriesImdbId, seasonNumber, episodeNumber, tmdbK
         cache.set(episodeCacheKey, episodeObject, 12 * 60 * 60);
         return episodeObject;
 
-    } catch (error) {
-        return null;
-    }
+    } catch (error) { return null; }
 }
 
-// --- VERCL ADAPTER (Correct and Stable) ---
+// --- VERCL ADAPTER (with Routing Fix) ---
 const { getRouter } = require("stremio-addon-sdk");
 const addonInterface = builder.getInterface();
 const router = getRouter(addonInterface);
 
 module.exports = (req, res) => {
+    // Handle /configure route
     if (req.url.startsWith('/configure')) {
         if (configHtml) {
             res.setHeader('Content-Type', 'text/html');
@@ -153,10 +133,16 @@ module.exports = (req, res) => {
         }
         return;
     }
+
+    // THE FIX:
+    // If the request is for the manifest (even with query params),
+    // we manually set the URL for the router to be clean.
+    if (req.url.startsWith('/manifest.json')) {
+        req.url = '/manifest.json';
+    }
     
-    // For all other requests, use the addon router
+    // Let the router handle the (potentially modified) request
     router(req, res, () => {
-        // Fallback for requests not handled by the router
         res.statusCode = 404;
         res.end();
     });
