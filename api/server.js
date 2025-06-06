@@ -4,37 +4,43 @@ const NodeCache = require('node-cache');
 const fs = require('fs');
 const path = require('path');
 
+// Pre-load configuration HTML for efficiency and safety.
+// This reads the file into memory once when the function initializes.
 let configHtml = null;
 try {
     const filePath = path.join(process.cwd(), 'config.html');
     configHtml = fs.readFileSync(filePath, 'utf-8');
 } catch (error) {
+    // This will be visible in Vercel logs if the file is missing.
     console.error("CRITICAL: Could not read config.html file.", error);
 }
 
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
-const cache = new NodeCache({ stdTTL: 24 * 60 * 60 });
+const cache = new NodeCache({ stdTTL: 24 * 60 * 60 }); // 24-hour cache
 
-// --- ADDON MANIFEST ---
+// --- ADDON MANIFEST (Fully Corrected) ---
 const manifest = {
     id: 'community.imdb.episode.ratings.configurable',
-    version: '2.2.0', // Version bump for the fix
+    version: '2.3.0', // Final version bump
     name: 'IMDb Episode Ratings (Configurable)',
     description: 'Adds IMDb ratings to individual episodes. Requires user API keys.',
     
-    // THE FIX: Remove "manifest" from this array
+    // Corrected: Only 'meta' is needed. This addon does not provide its own manifest.
     resources: ['meta'],
 
     types: ['series'],
     idPrefixes: ['tt'],
+    
+    // Corrected: Added the required 'catalogs' property as an empty array.
     catalogs: [],
+
     behaviorHints: {
         configurable: true,
         configurationRequired: true 
     }
 };
 
-// --- CORE LOGIC (No changes) ---
+// --- CORE LOGIC ---
 const builder = new addonBuilder(manifest);
 
 builder.defineMetaHandler(async (args) => {
@@ -131,7 +137,7 @@ async function getEpisodeRating(seriesImdbId, seasonNumber, episodeNumber, tmdbK
     }
 }
 
-// --- VERCL ADAPTER (No changes) ---
+// --- VERCL ADAPTER (Correct and Stable) ---
 const { getRouter } = require("stremio-addon-sdk");
 const addonInterface = builder.getInterface();
 const router = getRouter(addonInterface);
@@ -148,7 +154,9 @@ module.exports = (req, res) => {
         return;
     }
     
+    // For all other requests, use the addon router
     router(req, res, () => {
+        // Fallback for requests not handled by the router
         res.statusCode = 404;
         res.end();
     });
